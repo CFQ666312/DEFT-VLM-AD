@@ -52,7 +52,7 @@ class SingleDataset(Dataset):
         #print("case_id", case_id)
         #print("MMSE:,", self.data_noimg[subj_id]['MMSE'][()])
         #import sys
-        #sys.exit()  # 程序将在这里停止运行
+        #sys.exit()  
 
         if self.aug:
             rand_idx = np.random.randint(0, 4)
