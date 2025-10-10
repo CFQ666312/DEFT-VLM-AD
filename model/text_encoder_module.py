@@ -3,68 +3,64 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from transformers import AutoTokenizer, AutoModel, AutoConfig
 
 class TextEncoder(nn.Module):
     """
-    Text encoder using a medical BERT model with learnable prompts and projection.
+    Text encoder using a pre-trained model with learnable prompts and projection.
     """
 
-    def __init__(self, pretrained_model_name="emilyalsentzer/Bio_ClinicalBERT", prompt_length=30):
+    def __init__(self, pretrained_model, hidden_size, prompt_length=30):
+        """
+        pretrained_model: pre-trained text encoder model
+        hidden_size: embedding dimension
+        prompt_length: number of learnable prompt tokens
+        """
         super().__init__()
-        self.config = AutoConfig.from_pretrained(pretrained_model_name)
-        self.hidden_size = self.config.hidden_size
+        self.model = pretrained_model
+        self.hidden_size = hidden_size
+        self.prompt_length = prompt_length
 
-        # Load pre-trained medical BERT
-        self.text_encoder = AutoModel.from_pretrained(pretrained_model_name)
-
-        # Freeze original BERT parameters
-        for param in self.text_encoder.parameters():
+        # Freeze original model parameters
+        for param in self.model.parameters():
             param.requires_grad = False
 
         # Learnable prompts
-        self.prompt_length = prompt_length
-        self.text_prompts = nn.Parameter(torch.zeros(1, self.prompt_length, self.hidden_size))
+        self.prompts = nn.Parameter(torch.zeros(1, prompt_length, hidden_size))
+        nn.init.trunc_normal_(self.prompts, std=0.02)
 
         # Projection layer to joint embedding space
-        self.proj_layer = nn.Linear(self.hidden_size, self.hidden_size)
+        self.proj_layer = nn.Linear(hidden_size, hidden_size)
 
     def forward(self, input_ids, attention_mask=None):
         """
-        Forward pass
-        input_ids: (B, L) token ids
+        input_ids: (B, L)
         attention_mask: (B, L)
         Returns:
-            - projected text features
+            - projected text features (B, hidden_size)
         """
         B = input_ids.size(0)
 
-        # Expand prompts to batch
-        prompts = self.text_prompts.expand(B, -1, -1)
+        # Get input embeddings from the model
+        embeddings = self.model.embeddings(input_ids=input_ids)  # (B, L, hidden_size)
 
-        # Encode input
-        outputs = self.text_encoder(input_ids=input_ids, attention_mask=attention_mask)
-        token_embeddings = outputs.last_hidden_state  # (B, L, hidden_size)
+        # Concatenate learnable prompts at the beginning
+        prompts = self.prompts.expand(B, -1, -1)  # (B, prompt_len, hidden_size)
+        concat_embeddings = torch.cat([prompts, embeddings], dim=1)  # (B, prompt_len + L, hidden_size)
 
-        # Concatenate prompts at the beginning
-        concat_embeddings = torch.cat([prompts, token_embeddings], dim=1)  # (B, prompt_len + L, hidden_size)
+        # Update attention mask
+        if attention_mask is not None:
+            prompt_mask = torch.ones(B, self.prompt_length, device=attention_mask.device)
+            attention_mask = torch.cat([prompt_mask, attention_mask], dim=1)
 
-        # Mean pooling over sequence
-        pooled = concat_embeddings.mean(dim=1)
+        # Pass through encoder
+        encoder_outputs = self.model.encoder(concat_embeddings, attention_mask=attention_mask)
+        sequence_output = encoder_outputs.last_hidden_state  # (B, prompt_len + L, hidden_size)
 
-        # Projection
+        # Pooling (mean over sequence)
+        pooled = sequence_output.mean(dim=1)
+
+        # Projection and normalization
         proj_features = self.proj_layer(pooled)
         proj_features = F.normalize(proj_features, dim=-1)
 
         return proj_features
-
-
-if __name__ == "__main__":
-    # Demo usage
-    tokenizer = AutoTokenizer.from_pretrained("emilyalsentzer/Bio_ClinicalBERT")
-    texts = ["Patient shows normal hippocampal volume.", "MRI indicates enlarged ventricles in AD patient."]
-    encodings = tokenizer(texts, return_tensors="pt", padding=True, truncation=True)
-
-    model = TextEncoder(pretrained_model_name="emilyalsentzer/Bio_ClinicalBERT")
-    features = model(encodings["input_ids"], encodings["attention_mask"])
-    print("Text features shape:", features.shape)  # (B, hidden_size)
