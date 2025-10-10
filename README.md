@@ -18,4 +18,4 @@ This project uses publicly available Alzheimer's disease MRI datasets:
 
 - **ADNI**: Alzheimer's Disease Neuroimaging Initiative  
 - **OASIS**: Open Access Series of Imaging Studies  
-- **AIBL**: Australian Imaging, Biomarker & Lifestyle Flagship Study of Ageing  
+- **AIBL**: Australian Imaging, Biomarker & Lifestyle Flagship Study of Ageing
