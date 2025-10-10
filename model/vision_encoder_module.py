@@ -6,17 +6,17 @@ import torch.nn.functional as F
 from transformers import AutoConfig
 from M3D_CLIP.modeling_m3d_clip import ViT
 
+
 class VisionEncoder(nn.Module):
     """
-    Vision encoder with VPT prompts, MMSE token, projection, and cross-attention.
+    Vision encoder with Visual Prompt Tuning (VPT), MMSE token, projection, and cross-attention.
     """
 
     def __init__(self, pretrained_path, prompt_length=20, k_layers=12, img_size=(128,128,128)):
         super().__init__()
-        # 1. Load M3D-CLIP config
-        self.config = AutoConfig.from_pretrained("GoodBaiBai88/M3D-CLIP", trust_remote_code=True)
-        self.config.img_size = img_size
-        self.config.gather_loss = False
+
+        # load config
+        self.config = config
         self.hidden_size = self.config.hidden_size
 
         # 2. Initialize ViT
@@ -40,54 +40,92 @@ class VisionEncoder(nn.Module):
         self.vision_encoder.eval()
 
         # 4. Freeze ViT parameters except CLS token
-        for param in self.vision_encoder.parameters():
+        for name, param in self.vision_encoder.named_parameters():
             param.requires_grad = False
         self.vision_encoder.cls_token.requires_grad = True
 
         # 5. MMSE token + head
         self.MMSE_token = nn.Parameter(torch.zeros(1, 1, self.hidden_size))
+        nn.init.trunc_normal_(self.MMSE_token, std=0.02)
         self.MMSE_head = nn.Linear(self.hidden_size, 1)
 
         # 6. Projection layer
         self.proj_layer = nn.Linear(self.hidden_size, self.hidden_size)
 
-        # 7. Visual prompt tuning (VPT)
+        # 7. Visual Prompt Tuning (VPT)
         self.k_layers = k_layers
         self.prompt_length = prompt_length
-        self.visual_prompts = nn.ParameterList(
-            [nn.Parameter(torch.zeros(1, self.prompt_length, self.hidden_size)) for _ in range(self.k_layers)]
-        )
+        self.visual_prompts = nn.ParameterList([
+            nn.Parameter(torch.zeros(1, self.prompt_length, self.hidden_size))
+            for _ in range(self.k_layers)
+        ])
+        for p in self.visual_prompts:
+            nn.init.trunc_normal_(p, std=0.02)
 
         # 8. Cross-attention
         self.cross_attention = nn.MultiheadAttention(embed_dim=self.hidden_size, num_heads=8)
 
     def forward(self, x):
         """
-        Forward pass for MRI batch x (B, C, D, H, W)
+        Forward pass for MRI batch (B, C, D, H, W)
         Returns:
             - projected features
             - MMSE prediction
-            - cross-attention output
+            - self-attention output
         """
-        # ViT features
-        feats, _ = self.vision_encoder(x)
+        vit = self.vision_encoder
+        B = x.size(0)
 
-        # Projection
-        feats = self.proj_layer(feats)
+        # Patch embedding
+        x = vit.patch_embed(x)  # (B, N, hidden)
+        cls_token = vit.cls_token.expand(B, -1, -1)
+        mmse_token = self.MMSE_token.expand(B, -1, -1)
+
+        # Concatenate CLS and MMSE tokens
+        x = torch.cat((cls_token, mmse_token, x), dim=1)  # (B, 2+N, hidden)
+
+        # Add positional embedding (pad if necessary)
+        if vit.pos_embed is not None:
+            if vit.pos_embed.size(1) < x.size(1):
+                pad_len = x.size(1) - vit.pos_embed.size(1)
+                pad = torch.zeros(1, pad_len, vit.pos_embed.size(2), device=x.device)
+                pos = torch.cat([pad, vit.pos_embed], dim=1)
+            else:
+                pos = vit.pos_embed
+            x = x + pos[:, :x.size(1), :]
+        x = vit.pos_drop(x)
+
+        # Transformer blocks with visual prompts
+        for i, blk in enumerate(vit.blocks):
+            if i < self.k_layers:
+                prompt = self.visual_prompts[i].expand(B, -1, -1)
+                if i == 0:
+                    # first layer: insert after CLS and MMSE tokens
+                    x = torch.cat((x[:, :2], prompt, x[:, 2:]), dim=1)
+                else:
+                    # subsequent layers: replace previous prompt
+                    x = torch.cat((x[:, :2], prompt, x[:, 2 + self.prompt_length:]), dim=1)
+            x = blk(x)
+
+        # Layer normalization
+        x = vit.norm(x)
+
+        # Projection & normalization
+        feats = self.proj_layer(x)
         feats = F.normalize(feats, dim=-1)
 
-        # MMSE prediction
-        mmse_input = self.MMSE_token.expand(feats.size(0), -1, -1)
-        mmse_pred = self.MMSE_head(mmse_input)
+        # MMSE prediction (second token)
+        mmse_pred = self.MMSE_head(x[:, 1])
 
-        # Cross-attention (self-attention for illustration)
-        attn_output, _ = self.cross_attention(feats, feats, feats)
+        # Self-attention (MultiheadAttention expects seq_len, batch, embed_dim)
+        feats_t = feats.transpose(0, 1)
+        attn_output, _ = self.cross_attention(feats_t, feats_t, feats_t)
+        attn_output = attn_output.transpose(0, 1)
 
         return feats, mmse_pred, attn_output
 
 
 if __name__ == "__main__":
-    # Example usage
     dummy_input = torch.randn(2, 1, 128, 128, 128)
     model = VisionEncoder(pretrained_path="path/to/pretrained_ViT.bin")
     feats, mmse, attn = model(dummy_input)
