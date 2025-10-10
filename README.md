@@ -1,1 +1,21 @@
-Medical vision-language models (Med-VLMs) have shown impressive results in tasks such as report generation and visual question answering, but they still face several limitations. Most notably, they underutilize patient metadata and lack integration of clinical diagnostic knowledge. Moreover, most existing models are typically trained from scratch or fine-tuned on large-scale 2D image-text pairs, requiring extensive computational resources, and their effectiveness on 3D medical imaging is often limited due to the absence of structural information. To address these gaps, we propose a data-efficient fine-tuning pipeline to adapt 3D CT-based Med-VLMs for 3D MRI and demonstrate its application in Alzheimer’s disease (AD) diagnosis. Our system introduces two key innovations. First, we convert structured metadata into synthetic reports, enriching textual input for improved image-text alignment. Second, we add an auxiliary token trained to predict the mini-mental state examination (MMSE) score, a widely used clinical measure of cognitive function that correlates with AD severity. This provides additional supervision for fine-tuning. Applying lightweight prompt tuning to both image and text modalities, our approach achieves state-of-the-art performance on ADNI with only 1,504 training MRIs, outperforming methods trained on 27,161 MRIs, and shows strong zero-shot generalization on OASIS-2 and AIBL.
+# Med3D-VLM: 3D Medical Vision-Language Model for Alzheimer's Disease
+
+## Overview
+Med3D-VLM is a data-efficient fine-tuning framework for 3D medical vision-language models (Med-VLMs), designed for Alzheimer's disease diagnosis.  
+It leverages structured metadata to generate synthetic medical reports and introduces an auxiliary MMSE token for cognitive score prediction.  
+Our approach achieves strong performance on ADNI, with zero-shot generalization to OASIS-2 and AIBL datasets.
+
+## Features
+- 3D Vision Transformer (M3D) for MRI feature extraction
+- Learnable prompts and MMSE token tuning
+- Cross-attention between image and text modalities
+- CLIP-style contrastive loss
+- MMSE cognitive score prediction from MRI features
+- Automatic medical report generation from MRI-derived biomarkers (Hippocampus, Ventricles, Whole Brain, Entorhinal volumes) and clinical labels
+
+## Dataset
+This project uses publicly available Alzheimer's disease MRI datasets:  
+
+- **ADNI**: Alzheimer's Disease Neuroimaging Initiative  
+- **OASIS**: Open Access Series of Imaging Studies  
+- **AIBL**: Australian Imaging, Biomarker & Lifestyle Flagship Study of Ageing  
