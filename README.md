@@ -1,4 +1,4 @@
-# Med3D-VLM: 3D Medical Vision-Language Model for Alzheimer's Disease
+# Data-Efficient Fine-Tuning of Vision-Language Models for Diagnosis of Alzheimer’s Disease
 
 ## Overview
 Med3D-VLM is a data-efficient fine-tuning framework for 3D medical vision-language models (Med-VLMs), designed for Alzheimer's disease diagnosis.  
