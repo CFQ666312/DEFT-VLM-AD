@@ -121,8 +121,11 @@ class VisionEncoder(nn.Module):
 
 if __name__ == "__main__":
     dummy_input = torch.randn(2, 1, 128, 128, 128)
-    model = VisionEncoder(pretrained_path="path/to/pretrained_ViT.bin")
-    feats, mmse, attn = model(dummy_input)
+    model = VisionEncoder(
+        pretrained_path="path/to/pretrained_ViT.bin"
+    )
+
+    feats, mmse = model(dummy_input)
+
     print("Feature shape:", feats.shape)
     print("MMSE prediction shape:", mmse.shape)
-    print("Attention output shape:", attn.shape)
