@@ -81,23 +81,13 @@ class VisionEncoder(nn.Module):
         B = x.size(0)
 
         # Patch embedding
-        x = vit.patch_embed(x)  # (B, N, hidden)
+        x = vit.patch_embedding(x)
+
         cls_token = vit.cls_token.expand(B, -1, -1)
         mmse_token = self.MMSE_token.expand(B, -1, -1)
-
-        # Concatenate CLS and MMSE tokens
-        x = torch.cat((cls_token, mmse_token, x), dim=1)  # (B, 2+N, hidden)
-
-        # Add positional embedding (pad if necessary)
-        if vit.pos_embed is not None:
-            if vit.pos_embed.size(1) < x.size(1):
-                pad_len = x.size(1) - vit.pos_embed.size(1)
-                pad = torch.zeros(1, pad_len, vit.pos_embed.size(2), device=x.device)
-                pos = torch.cat([pad, vit.pos_embed], dim=1)
-            else:
-                pos = vit.pos_embed
-            x = x + pos[:, :x.size(1), :]
-        x = vit.pos_drop(x)
+        
+        # CLS and MMSE tokens precede the patch tokens
+        x = torch.cat((cls_token, mmse_token, x), dim=1)
 
         # Transformer blocks with visual prompts
         for i, blk in enumerate(vit.blocks):
