@@ -69,6 +69,8 @@ class VisionEncoder(nn.Module):
         # 8. Cross-attention
         self.cross_attention = nn.MultiheadAttention(embed_dim=self.hidden_size, num_heads=8)
 
+        self.norm = nn.LayerNorm(self.hidden_size)
+
     def forward(self, x):
         """
         Forward pass for MRI batch (B, C, D, H, W)
@@ -102,13 +104,11 @@ class VisionEncoder(nn.Module):
             x = blk(x)
 
         # Layer normalization
-        x = vit.norm(x)
+        x = self.norm(x)
 
-        # Projection & normalization
         feats = self.proj_layer(x)
         feats = F.normalize(feats, dim=-1)
-
-        # MMSE prediction (second token)
+        
         mmse_pred = self.MMSE_head(feats[:, 1])
 
         # Self-attention (MultiheadAttention expects seq_len, batch, embed_dim)
