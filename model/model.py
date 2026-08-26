@@ -212,7 +212,6 @@ class TuneM3D(nn.Module):
         total_loss = (
             clip_loss
             + self.alpha * mmse_loss
-            + cls_loss
         )
 
         return {
