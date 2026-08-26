@@ -109,7 +109,7 @@ class VisionEncoder(nn.Module):
         feats = F.normalize(feats, dim=-1)
 
         # MMSE prediction (second token)
-        mmse_pred = self.MMSE_head(x[:, 1])
+        mmse_pred = self.MMSE_head(feats[:, 1])
 
         # Self-attention (MultiheadAttention expects seq_len, batch, embed_dim)
         feats_t = feats.transpose(0, 1)
