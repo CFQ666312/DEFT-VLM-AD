@@ -47,7 +47,11 @@ class VisionEncoder(nn.Module):
         # 5. MMSE token + head
         self.MMSE_token = nn.Parameter(torch.zeros(1, 1, self.hidden_size))
         nn.init.trunc_normal_(self.MMSE_token, std=0.02)
-        self.MMSE_head = nn.Linear(self.hidden_size, 1)
+        self.MMSE_head = nn.Sequential(
+            nn.Linear(self.hidden_size, self.hidden_size // 2),
+            nn.ReLU(),
+            nn.Linear(self.hidden_size // 2, 1)
+        )
 
         # 6. Projection layer
         self.proj_layer = nn.Linear(self.hidden_size, self.hidden_size)
