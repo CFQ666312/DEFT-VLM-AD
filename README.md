@@ -1,7 +1,7 @@
 # Data-Efficient Fine-Tuning of Vision-Language Models for Diagnosis of Alzheimer’s Disease
 
 ## Overview
-Med3D-VLM is a data-efficient fine-tuning framework for 3D medical vision-language models (Med-VLMs), designed for Alzheimer's disease diagnosis.  
+DEFT is a data-efficient fine-tuning framework for 3D medical vision-language models (Med-VLMs), designed for Alzheimer's disease diagnosis.  
 It leverages structured metadata to generate synthetic medical reports and introduces an auxiliary MMSE token for cognitive score prediction.  
 Our approach achieves strong performance on ADNI, with zero-shot generalization to OASIS-2 and AIBL datasets.
 
