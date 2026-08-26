@@ -20,14 +20,23 @@ class TuneM3D(nn.Module):
 
         # Encoders
         self.M3D = VisionEncoder(pretrained_visual_path)
-        self.text_encoder = TextEncoder()
+        self.text_encoder = TextEncoder(
+            pretrained_model=text_model,
+            hidden_size=text_hidden_size,
+            output_size=768,
+            prompt_length=text_prompt_length
+        )
         self.clip_model = clip_model.float() if clip_model is not None else None
 
         # Linear projection for text features
-        self.linear_layer = nn.Linear(1024, 768)
+        #self.linear_layer = nn.Linear(1024, 768)
 
         # Cross-attention
-        self.cross_attention = nn.MultiheadAttention(embed_dim=768, num_heads=8)
+        self.cross_attention = nn.MultiheadAttention(
+            embed_dim=768,
+            num_heads=8,
+            batch_first=True
+        )
 
         # Classification head
         self.fc = Classifier(latent_size=768, inter_num_ch=64)
@@ -59,7 +68,9 @@ class TuneM3D(nn.Module):
                 f"Hippocampal Vol: {format_value(Hippocampus[i])}, "
                 f"Ventricular size: {format_value(Ventricles[i])}, "
                 f"Whole brain Vol: {format_value(WholeBrain[i])}, "
-                f"Entorhinal Vol: {format_value(Entorhinal[i])}"
+                f"Entorhinal Vol: {format_value(Entorhinal[i])}, "
+                f"Fusiform Vol: {format_value(Fusiform[i])}, "
+                f"Middle temporal Vol: {format_value(MidTemp[i])}"
             )
             reports.append(report)
 
@@ -78,45 +89,46 @@ class TuneM3D(nn.Module):
     # 3. Text features
     # -------------------------
     def compute_text_features(self, reports):
-        """
-        Encode text reports using the TextEncoder.
-        """
-        tokenizer_class = self.text_encoder.text_encoder.config.tokenizer_class
-        tokenizer = tokenizer_class.from_pretrained(self.text_encoder.text_encoder.name_or_path)
-        encoding = tokenizer(
+        encoding = self.tokenizer(
             reports,
             padding=True,
             truncation=True,
             return_tensors="pt"
-        ).to(device)
-
-        text_features = self.text_encoder(
+        )
+    
+        text_tokens, text_mask = self.text_encoder(
             input_ids=encoding["input_ids"],
             attention_mask=encoding["attention_mask"]
         )
-
-        # Linear projection + normalize
-        text_features = self.linear_layer(text_features)
-        text_features = F.normalize(text_features, dim=-1)
-        return text_features
+    
+        return text_tokens, text_mask
 
     # -------------------------
     # 4. Cross-attention
     # -------------------------
-    def apply_cross_attention(self, image_feats, text_feats):
-        """
-        Apply cross-attention between visual and textual features.
-        """
-        # MultiheadAttention expects shape [seq_len, batch, embed_dim]
-        img_t = image_feats.transpose(0, 1)
-        txt_t = text_feats.transpose(0, 1)
-
-        attn_out_text, _ = self.cross_attention(img_t, txt_t, txt_t)
-        attn_out_img, _ = self.cross_attention(txt_t, img_t, img_t)
-
-        img_feats = (0.01 * attn_out_text + img_t).transpose(0, 1)
-        txt_feats = (attn_out_img + txt_t).transpose(0, 1)
-        return img_feats, txt_feats
+    def apply_cross_attention(
+        self,
+        image_feats,
+        text_tokens,
+        text_mask
+    ):
+        adapted_image, _ = self.cross_attention(
+            query=image_feats,
+            key=text_tokens,
+            value=text_tokens,
+            key_padding_mask=~text_mask.bool()
+        )
+    
+        adapted_text, _ = self.cross_attention(
+            query=text_tokens,
+            key=image_feats,
+            value=image_feats
+        )
+    
+        image_feats = image_feats + 0.01 * adapted_image
+        text_tokens = text_tokens + adapted_text
+    
+        return image_feats, text_tokens
 
     # -------------------------
     # 5. Loss computations
@@ -146,21 +158,62 @@ class TuneM3D(nn.Module):
     # 6. Forward
     # -------------------------
     def forward(self, img, Hippocampus, Ventricles, WholeBrain, Entorhinal, Fusiform, MidTemp, MMSE, labels):
-        # 1. Visual features
-        image_feats, cls_feat, mmse_feat, predicted_mmse = self.compute_visual_features(img)
-
-        # 2. Text features
-        reports = self.generate_medical_report(Hippocampus, Ventricles, WholeBrain, Entorhinal, Fusiform, MidTemp, labels)
-        text_features = self.compute_text_features(reports)
-
-        # 3. Cross-attention
-        image_feats, text_features = self.apply_cross_attention(image_feats, text_features)
-
-        # 4. Losses
-        clip_loss, logits_per_image = self.compute_clip_loss(cls_feat, text_features)
-        mmse_loss = self.compute_mmse_loss(predicted_mmse, MMSE)
-        cls_loss, cls_logits = self.compute_cls_loss(mmse_feat, cls_feat, labels)
-        total_loss = clip_loss + mmse_loss * self.alpha + cls_loss
+        # Visual representations and MMSE prediction
+        image_feats, cls_feat, mmse_feat, predicted_mmse = \
+            self.compute_visual_features(img)
+        
+        # Structured textual supervision
+        reports = self.generate_medical_report(
+            Hippocampus,
+            Ventricles,
+            WholeBrain,
+            Entorhinal,
+            Fusiform,
+            MidTemp,
+            labels
+        )
+        
+        text_tokens, text_mask = self.compute_text_features(reports)
+        
+        # Cross-modal interaction
+        image_feats, text_tokens = self.apply_cross_attention(
+            image_feats,
+            text_tokens,
+            text_mask
+        )
+        
+        # Representations after cross-attention
+        cls_feat = image_feats[:, 0]
+        mmse_feat = image_feats[:, 1]
+        
+        mask = text_mask.unsqueeze(-1).to(text_tokens.dtype)
+        text_pooled = (
+            (text_tokens * mask).sum(dim=1)
+            / mask.sum(dim=1).clamp_min(1.0)
+        )
+        text_pooled = F.normalize(text_pooled, dim=-1)
+        
+        clip_loss, logits_per_image = self.compute_clip_loss(
+            cls_feat,
+            text_pooled
+        )
+        
+        mmse_loss = self.compute_mmse_loss(
+            predicted_mmse,
+            MMSE
+        )
+        
+        cls_loss, cls_logits = self.compute_cls_loss(
+            mmse_feat,
+            cls_feat,
+            labels
+        )
+        
+        total_loss = (
+            clip_loss
+            + self.alpha * mmse_loss
+            + cls_loss
+        )
 
         return {
             "logits_per_image": logits_per_image,
