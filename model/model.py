@@ -40,7 +40,7 @@ class TuneM3D(nn.Module):
         self.cross_norm = nn.LayerNorm(768)
 
         # Classification head
-        self.fc = Classifier(latent_size=768, inter_num_ch=64)
+        # self.fc = Classifier(latent_size=768, inter_num_ch=64)
 
         # CLIP logit scale
         self.logit_scale = nn.Parameter(
@@ -218,12 +218,13 @@ class TuneM3D(nn.Module):
             predicted_mmse,
             MMSE
         )
-        
+
+        '''
         cls_loss, cls_logits = self.compute_cls_loss(
             mmse_feat,
             cls_feat,
             labels
-        )
+        )'''
         
         total_loss = (
             clip_loss
