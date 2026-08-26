@@ -37,12 +37,15 @@ class TuneM3D(nn.Module):
             num_heads=8,
             batch_first=True
         )
+        self.cross_norm = nn.LayerNorm(768)
 
         # Classification head
         self.fc = Classifier(latent_size=768, inter_num_ch=64)
 
         # CLIP logit scale
-        self.logit_scale = nn.Parameter(torch.log(torch.tensor(1 / 0.07)))
+        self.logit_scale = nn.Parameter(
+            torch.log(torch.tensor(10.0))
+        )
 
         # MMSE loss weighting
         self.alpha = 0.5
@@ -125,8 +128,13 @@ class TuneM3D(nn.Module):
             value=image_feats
         )
     
-        image_feats = image_feats + 0.01 * adapted_image
-        text_tokens = text_tokens + adapted_text
+        image_feats = self.cross_norm(
+            image_feats + 0.01 * adapted_image
+        )
+        
+        text_tokens = self.cross_norm(
+            text_tokens + adapted_text
+        )
     
         return image_feats, text_tokens
 
@@ -134,8 +142,16 @@ class TuneM3D(nn.Module):
     # 5. Loss computations
     # -------------------------
     def compute_clip_loss(self, image_cls, text_features):
-        logits_per_image = torch.matmul(image_cls, text_features.T) * self.logit_scale
-        logits_per_text = torch.matmul(text_features, image_cls.T) * self.logit_scale
+        scale = self.logit_scale.exp()
+
+        logits_per_image = (
+            image_cls @ text_features.T
+        ) * scale
+        
+        logits_per_text = (
+            text_features @ image_cls.T
+        ) * scale
+        
         clip_loss = (F.cross_entropy(logits_per_image, torch.arange(len(logits_per_image)).to(device)) +
                      F.cross_entropy(logits_per_text, torch.arange(len(logits_per_text)).to(device))) / 2.0
         return clip_loss, logits_per_image
