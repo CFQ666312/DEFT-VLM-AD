@@ -69,11 +69,9 @@ class TuneM3D(nn.Module):
     # 2. Visual features
     # -------------------------
     def compute_visual_features(self, img):
-        feats, _, _ = self.M3D(img)
-        feats = F.normalize(feats, dim=-1)
+        feats, predicted_mmse = self.M3D(img)
         cls_feat = feats[:, 0]
         mmse_feat = feats[:, 1]
-        predicted_mmse = self.M3D.MMSE_head(mmse_feat)
         return feats, cls_feat, mmse_feat, predicted_mmse
 
     # -------------------------
