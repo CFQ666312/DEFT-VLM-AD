@@ -232,7 +232,7 @@ class TuneM3D(nn.Module):
 
         return {
             "logits_per_image": logits_per_image,
-            "text_embedding": text_features,
+            "text_embedding": text_pooled,
             "img_embedding": cls_feat,
             #"CLS_logits": cls_logits,
             "loss": total_loss,
