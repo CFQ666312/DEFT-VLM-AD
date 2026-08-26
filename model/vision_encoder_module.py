@@ -126,7 +126,7 @@ class VisionEncoder(nn.Module):
         attn_output, _ = self.cross_attention(feats_t, feats_t, feats_t)
         attn_output = attn_output.transpose(0, 1)
 
-        return feats, mmse_pred, attn_output
+        return feats, mmse_pred
 
 
 if __name__ == "__main__":
