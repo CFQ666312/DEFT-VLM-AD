@@ -129,7 +129,7 @@ class TuneM3D(nn.Module):
         )
     
         image_feats = self.cross_norm(
-            image_feats + 0.01 * adapted_image
+            image_feats + adapted_image
         )
         
         text_tokens = self.cross_norm(
